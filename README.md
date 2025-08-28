@@ -64,3 +64,7 @@ MIT License
 ## 👤 Geliştirici
 
 [@wwwakcan](https://github.com/wwwakcan)
+
+## 🤖 AI Desteği
+
+Bu proje Claude AI desteği ile geliştirilmiştir.
