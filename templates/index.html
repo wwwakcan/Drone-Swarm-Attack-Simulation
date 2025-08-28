@@ -1,0 +1,984 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🚁 DRONE SWARM KONTROL MERKEZİ</title>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+            color: #fff;
+            overflow-x: hidden;
+            height: 100vh;
+        }
+        
+        .header {
+            background: rgba(0, 0, 0, 0.6);
+            padding: 15px;
+            text-align: center;
+            backdrop-filter: blur(10px);
+            border-bottom: 2px solid #00ff88;
+            position: relative;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            background: linear-gradient(90deg, #00ff88, #00ccff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 5px;
+        }
+        
+        .header p {
+            color: #aaa;
+            font-size: 0.9em;
+        }
+        
+        #connectionStatus {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            padding: 8px 15px;
+            background: rgba(0,0,0,0.8);
+            border-radius: 20px;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+        
+        .status-dot.connected {
+            background: #00ff88;
+        }
+        
+        .status-dot.disconnected {
+            background: #ff4444;
+            animation: none;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .container {
+            display: grid;
+            grid-template-columns: 350px 1fr 400px;
+            gap: 20px;
+            padding: 20px;
+            height: calc(100vh - 100px);
+        }
+        
+        .panel {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .panel h2 {
+            margin-bottom: 15px;
+            color: #00ff88;
+            font-size: 1.3em;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding-bottom: 10px;
+        }
+        
+        /* Drone Listesi */
+        .drone-list {
+            overflow-y: auto;
+            flex: 1;
+            max-height: 400px;
+        }
+        
+        .drone-item {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+            padding: 12px;
+            margin-bottom: 10px;
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+        
+        .drone-item:hover {
+            background: rgba(255, 255, 255, 0.1);
+            transform: translateX(5px);
+            border-color: #00ff88;
+        }
+        
+        .drone-item.selected {
+            background: rgba(0, 255, 136, 0.1);
+            border-color: #00ff88;
+            box-shadow: 0 0 20px rgba(0, 255, 136, 0.3);
+        }
+        
+        .drone-item.engaging {
+            background: rgba(255, 0, 68, 0.1);
+            border-color: #ff0044;
+            animation: alert 1s infinite;
+        }
+        
+        .drone-item.destroyed {
+            opacity: 0.3;
+            border-color: #666;
+            pointer-events: none;
+        }
+        
+        @keyframes alert {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.02); }
+        }
+        
+        .drone-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        
+        .drone-id {
+            font-weight: bold;
+            font-size: 1.1em;
+        }
+        
+        .status-badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 0.75em;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        
+        .status-flying { background: #00ccff; color: #000; }
+        .status-engaging { background: #ff0044; color: #fff; }
+        .status-returning { background: #ffaa00; color: #000; }
+        .status-idle { background: #666; color: #fff; }
+        .status-destroyed { background: #333; color: #999; }
+        .status-searching { background: #9b59b6; color: #fff; }
+        
+        .drone-info {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            font-size: 0.85em;
+            color: #ccc;
+        }
+        
+        .info-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        
+        /* Harita */
+        .map-container {
+            flex: 1;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 15px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        #mapCanvas {
+            width: 100%;
+            height: 100%;
+            border-radius: 15px;
+        }
+        
+        .map-overlay {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 0.85em;
+        }
+        
+        /* Kontroller */
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
+        .btn {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 8px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 0.95em;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn:active {
+            transform: translateY(0);
+        }
+        
+        .btn.danger {
+            background: linear-gradient(135deg, #f093fb, #f5576c);
+        }
+        
+        .btn.success {
+            background: linear-gradient(135deg, #00ff88, #00ccff);
+        }
+        
+        .btn.warning {
+            background: linear-gradient(135deg, #f7971e, #ffd200);
+        }
+        
+        .btn.paused {
+            background: linear-gradient(135deg, #ff6b6b, #ff0044);
+        }
+        
+        /* İstatistikler */
+        .stats-container {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .stat-card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            padding: 15px;
+            text-align: center;
+            transition: all 0.3s;
+        }
+        
+        .stat-card:hover {
+            background: rgba(255, 255, 255, 0.08);
+            transform: scale(1.05);
+        }
+        
+        .stat-value {
+            font-size: 2.5em;
+            font-weight: bold;
+            background: linear-gradient(90deg, #00ff88, #00ccff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        
+        .stat-label {
+            font-size: 0.85em;
+            color: #aaa;
+            margin-top: 5px;
+            text-transform: uppercase;
+        }
+        
+        /* Kamera Grid */
+        .camera-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            height: 300px;
+            margin-bottom: 20px;
+        }
+        
+        .camera-view {
+            background: #000;
+            border-radius: 10px;
+            border: 2px solid #333;
+            position: relative;
+            overflow: hidden;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .camera-view:hover {
+            border-color: #00ff88;
+            transform: scale(1.02);
+        }
+        
+        .camera-view.selected {
+            border-color: #00ff88;
+            box-shadow: 0 0 20px rgba(0, 255, 136, 0.5);
+        }
+        
+        .camera-view canvas {
+            width: 100%;
+            height: 100%;
+        }
+        
+        .camera-label {
+            position: absolute;
+            top: 5px;
+            left: 5px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 4px 10px;
+            border-radius: 5px;
+            font-size: 0.75em;
+            font-weight: bold;
+        }
+        
+        .camera-status {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            width: 8px;
+            height: 8px;
+            background: #00ff88;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+        
+        /* Debug Panel */
+        .debug-panel {
+            background: rgba(0, 0, 0, 0.5);
+            border: 1px solid rgba(0, 255, 136, 0.3);
+            border-radius: 8px;
+            padding: 15px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85em;
+            max-height: 250px;
+            overflow-y: auto;
+        }
+        
+        .debug-line {
+            margin: 2px 0;
+            padding: 2px 5px;
+            border-left: 2px solid transparent;
+        }
+        
+        .debug-line.info { border-left-color: #00ccff; }
+        .debug-line.warning { border-left-color: #ffaa00; }
+        .debug-line.error { border-left-color: #ff0044; }
+        .debug-line.success { border-left-color: #00ff88; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🚁 DRONE SWARM KONTROL MERKEZİ</h1>
+        <p>30 Drone Koordineli Saldırı Simülasyonu | Gerçek Zamanlı İzleme ve Kontrol</p>
+        <div id="connectionStatus">
+            <div class="status-dot disconnected"></div>
+            <span id="statusText">Bağlantı bekleniyor...</span>
+        </div>
+    </div>
+    
+    <div class="container">
+        <!-- Sol Panel - Drone Listesi -->
+        <div class="panel">
+            <h2>📡 Drone Filosu</h2>
+            <div class="drone-list" id="droneList"></div>
+            
+            <div class="stats-container">
+                <div class="stat-card">
+                    <div class="stat-value" id="activeDrones">0</div>
+                    <div class="stat-label">Aktif Drone</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="engagingDrones">0</div>
+                    <div class="stat-label">Saldırıda</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="activeTargets">0</div>
+                    <div class="stat-label">Hedef</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="destroyedTargets">0</div>
+                    <div class="stat-label">İmha Edildi</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Orta Panel - Harita -->
+        <div class="panel">
+            <h2>🗺️ Operasyon Haritası</h2>
+            <div class="map-container">
+                <canvas id="mapCanvas"></canvas>
+                <div class="map-overlay">
+                    <div>Simülasyon Zamanı: <span id="simTime">0.0</span>s</div>
+                    <div>FPS: <span id="fps">20</span></div>
+                </div>
+            </div>
+            
+            <div class="controls">
+                <button class="btn success" id="pauseBtn" onclick="togglePause()">
+                    <span>⏸️</span> DURAKLAT
+                </button>
+                <button class="btn warning" onclick="spawnTarget()">
+                    <span>🎯</span> HEDEF EKLE
+                </button>
+                <button class="btn danger" onclick="resetSimulation()">
+                    <span>🔄</span> SIFIRLA
+                </button>
+                <button class="btn" onclick="toggleAutoMode()">
+                    <span>🤖</span> OTO MOD
+                </button>
+            </div>
+        </div>
+        
+        <!-- Sağ Panel - Kameralar ve Debug -->
+        <div class="panel">
+            <h2>📹 Drone Kameraları</h2>
+            <div class="camera-grid" id="cameraGrid">
+                <div class="camera-view" data-drone="0">
+                    <div class="camera-label">Drone #0</div>
+                    <div class="camera-status"></div>
+                    <canvas id="cam0"></canvas>
+                </div>
+                <div class="camera-view" data-drone="1">
+                    <div class="camera-label">Drone #1</div>
+                    <div class="camera-status"></div>
+                    <canvas id="cam1"></canvas>
+                </div>
+                <div class="camera-view" data-drone="2">
+                    <div class="camera-label">Drone #2</div>
+                    <div class="camera-status"></div>
+                    <canvas id="cam2"></canvas>
+                </div>
+                <div class="camera-view" data-drone="3">
+                    <div class="camera-label">Drone #3</div>
+                    <div class="camera-status"></div>
+                    <canvas id="cam3"></canvas>
+                </div>
+            </div>
+            
+            <h2 style="margin-top: 20px;">🔍 Debug Konsolu</h2>
+            <div class="debug-panel" id="debugPanel">
+                <div class="debug-line info">Sistem başlatılıyor...</div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Global değişkenler
+        let socket = null;
+        let drones = [];
+        let targets = [];
+        let selectedDrone = null;
+        let isPaused = false;
+        let autoMode = true;
+        let lastUpdate = Date.now();
+        let frameCount = 0;
+        let currentFPS = 20;
+        
+        // Canvas setup
+        const canvas = document.getElementById('mapCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Canvas boyutlandırma
+        function resizeCanvas() {
+            const container = canvas.parentElement;
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight - 50;
+        }
+        
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+        
+        // Debug log
+        function log(message, type = 'info') {
+            const panel = document.getElementById('debugPanel');
+            const timestamp = new Date().toLocaleTimeString();
+            const line = document.createElement('div');
+            line.className = `debug-line ${type}`;
+            line.textContent = `[${timestamp}] ${message}`;
+            panel.insertBefore(line, panel.firstChild);
+            
+            while (panel.children.length > 50) {
+                panel.removeChild(panel.lastChild);
+            }
+            
+            console.log(`[${type.toUpperCase()}] ${message}`);
+        }
+        
+        // Socket.IO Bağlantısı
+        function initSocket() {
+            log('Socket.IO bağlantısı kuruluyor...', 'info');
+            
+            socket = io('http://localhost:1010', {
+                transports: ['websocket', 'polling'],
+                reconnection: true,
+                reconnectionAttempts: 10,
+                reconnectionDelay: 1000
+            });
+            
+            socket.on('connect', () => {
+                log(`Sunucuya bağlandı! ID: ${socket.id}`, 'success');
+                document.querySelector('.status-dot').className = 'status-dot connected';
+                document.getElementById('statusText').textContent = 'Bağlı';
+                socket.emit('request_update');
+            });
+            
+            socket.on('disconnect', () => {
+                log('Sunucu bağlantısı koptu!', 'error');
+                document.querySelector('.status-dot').className = 'status-dot disconnected';
+                document.getElementById('statusText').textContent = 'Bağlantı koptu';
+            });
+            
+            socket.on('connect_error', (error) => {
+                log(`Bağlantı hatası: ${error.message}`, 'error');
+            });
+            
+            socket.on('simulation_update', (data) => {
+                updateSimulation(data);
+            });
+            
+            socket.on('message', (msg) => {
+                log(`Sunucu: ${msg}`, 'info');
+            });
+        }
+        
+        // Simülasyon güncelleme
+        function updateSimulation(data) {
+            if (data.drones) {
+                drones = data.drones;
+                updateDroneList();
+            }
+            
+            if (data.targets) {
+                targets = data.targets;
+            }
+            
+            if (data.stats) {
+                updateStats(data.stats);
+            }
+            
+            if (data.time !== undefined) {
+                document.getElementById('simTime').textContent = data.time.toFixed(1);
+            }
+            
+            // FPS hesaplama
+            frameCount++;
+            const now = Date.now();
+            if (now - lastUpdate > 1000) {
+                currentFPS = frameCount;
+                document.getElementById('fps').textContent = currentFPS;
+                frameCount = 0;
+                lastUpdate = now;
+            }
+        }
+        
+        // İstatistikleri güncelle
+        function updateStats(stats) {
+            document.getElementById('activeDrones').textContent = stats.active || 0;
+            document.getElementById('engagingDrones').textContent = stats.engaging || 0;
+            document.getElementById('activeTargets').textContent = stats.targets || 0;
+            document.getElementById('destroyedTargets').textContent = stats.destroyed || 0;
+        }
+        
+        // Drone listesini güncelle
+        function updateDroneList() {
+            const list = document.getElementById('droneList');
+            list.innerHTML = '';
+            
+            drones.forEach(drone => {
+                const item = document.createElement('div');
+                item.className = `drone-item ${drone.status.toLowerCase()}`;
+                
+                if (selectedDrone === drone.id) {
+                    item.className += ' selected';
+                }
+                
+                item.innerHTML = `
+                    <div class="drone-header">
+                        <span class="drone-id">Drone #${drone.id}</span>
+                        <span class="status-badge status-${drone.status.toLowerCase()}">${drone.status}</span>
+                    </div>
+                    <div class="drone-info">
+                        <div class="info-item">🔋 ${Math.round(drone.battery)}%</div>
+                        <div class="info-item">📍 ${drone.position[2].toFixed(1)}m</div>
+                        <div class="info-item">🚀 ${drone.velocity.toFixed(1)}m/s</div>
+                    </div>
+                    ${drone.target !== null ? `<div style="margin-top: 8px; color: #ff0044;">🎯 Hedef #${drone.target}</div>` : ''}
+                    ${drone.armed ? `<div style="color: #ffaa00;">⚠️ SİLAHLI</div>` : ''}
+                `;
+                
+                item.onclick = () => selectDrone(drone.id);
+                list.appendChild(item);
+            });
+        }
+        
+        // Drone seçimi
+        function selectDrone(droneId) {
+            selectedDrone = droneId;
+            updateDroneList();
+            
+            const drone = drones.find(d => d.id === droneId);
+            if (drone) {
+                log(`Drone #${droneId} seçildi - Durum: ${drone.status}`, 'info');
+            }
+        }
+        
+        // Harita çizimi
+        function drawMap() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Arka plan
+            const gradient = ctx.createRadialGradient(
+                canvas.width / 2, canvas.height / 2, 0,
+                canvas.width / 2, canvas.height / 2, canvas.width / 2
+            );
+            gradient.addColorStop(0, 'rgba(0, 50, 100, 0.2)');
+            gradient.addColorStop(1, 'rgba(0, 0, 0, 0.5)');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Grid
+            ctx.strokeStyle = 'rgba(0, 255, 136, 0.1)';
+            ctx.lineWidth = 1;
+            
+            const gridSize = 50;
+            for (let x = 0; x <= canvas.width; x += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvas.height);
+                ctx.stroke();
+            }
+            
+            for (let y = 0; y <= canvas.height; y += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvas.width, y);
+                ctx.stroke();
+            }
+            
+            // Hedefleri çiz
+            targets.forEach(target => {
+                if (!target.destroyed) {
+                    const x = (target.position[0] / 400) * canvas.width;
+                    const y = (target.position[1] / 400) * canvas.height;
+                    
+                    ctx.save();
+                    ctx.translate(x, y);
+                    
+                    // Hedef sembolü
+                    ctx.strokeStyle = '#ff0044';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 15, 0, Math.PI * 2);
+                    ctx.stroke();
+                    
+                    ctx.fillStyle = '#ff0044';
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 5, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    // Hedef tipi ve ID
+                    ctx.fillStyle = '#fff';
+                    ctx.font = 'bold 10px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(`${target.type[0].toUpperCase()}${target.id}`, 0, -20);
+                    
+                    // Sağlık barı
+                    const healthPercent = target.health / target.max_health;
+                    ctx.fillStyle = 'rgba(255, 0, 0, 0.3)';
+                    ctx.fillRect(-20, 25, 40, 3);
+                    ctx.fillStyle = '#ff0044';
+                    ctx.fillRect(-20, 25, 40 * healthPercent, 3);
+                    
+                    ctx.restore();
+                }
+            });
+            
+            // Drone'ları çiz
+            drones.forEach(drone => {
+                const x = (drone.position[0] / 400) * canvas.width;
+                const y = (drone.position[1] / 400) * canvas.height;
+                
+                ctx.save();
+                ctx.translate(x, y);
+                
+                // Durum rengi
+                let color = '#00ccff';
+                if (drone.status === 'ENGAGING') {
+                    color = '#ff0044';
+                } else if (drone.status === 'DESTROYED') {
+                    color = '#333';
+                } else if (drone.status === 'RETURNING') {
+                    color = '#ffaa00';
+                }
+                
+                // Gölge efekti
+                ctx.shadowColor = color;
+                ctx.shadowBlur = 10;
+                
+                // Drone sembolü
+                ctx.fillStyle = color;
+                ctx.beginPath();
+                ctx.arc(0, 0, 8, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Yükseklik halkası
+                const altitude = drone.position[2];
+                ctx.strokeStyle = `rgba(0, 255, 136, ${altitude / 150})`;
+                ctx.lineWidth = 2;
+                ctx.shadowBlur = 0;
+                ctx.beginPath();
+                ctx.arc(0, 0, 12 + altitude / 10, 0, Math.PI * 2);
+                ctx.stroke();
+                
+                // Drone ID
+                ctx.fillStyle = '#fff';
+                ctx.font = 'bold 10px Arial';
+                ctx.textAlign = 'center';
+                ctx.shadowBlur = 2;
+                ctx.shadowColor = '#000';
+                ctx.fillText(drone.id, 0, -15);
+                
+                // Hedef çizgisi
+                if (drone.target !== null) {
+                    const target = targets.find(t => t.id === drone.target);
+                    if (target && !target.destroyed) {
+                        const tx = (target.position[0] / 400) * canvas.width;
+                        const ty = (target.position[1] / 400) * canvas.height;
+                        
+                        ctx.strokeStyle = 'rgba(255, 0, 68, 0.5)';
+                        ctx.lineWidth = 2;
+                        ctx.setLineDash([5, 5]);
+                        ctx.beginPath();
+                        ctx.moveTo(0, 0);
+                        ctx.lineTo(tx - x, ty - y);
+                        ctx.stroke();
+                        ctx.setLineDash([]);
+                    }
+                }
+                
+                ctx.restore();
+            });
+            
+            // Radar efekti
+            const time = Date.now() / 1000;
+            const angle = (time * Math.PI / 2) % (Math.PI * 2);
+            
+            ctx.save();
+            const centerX = canvas.width / 2;
+            const centerY = canvas.height / 2;
+            
+            const gradient2 = ctx.createLinearGradient(
+                centerX, centerY,
+                centerX + Math.cos(angle) * canvas.width,
+                centerY + Math.sin(angle) * canvas.height
+            );
+            gradient2.addColorStop(0, 'rgba(0, 255, 136, 0)');
+            gradient2.addColorStop(0.5, 'rgba(0, 255, 136, 0.3)');
+            gradient2.addColorStop(1, 'rgba(0, 255, 136, 0)');
+            
+            ctx.strokeStyle = gradient2;
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(centerX, centerY);
+            ctx.lineTo(
+                centerX + Math.cos(angle) * canvas.width,
+                centerY + Math.sin(angle) * canvas.height
+            );
+            ctx.stroke();
+            ctx.restore();
+        }
+        
+        // Kamera simülasyonu
+        function drawCameraViews() {
+            for (let i = 0; i < 4; i++) {
+                const camCanvas = document.getElementById(`cam${i}`);
+                if (!camCanvas) continue;
+                
+                const ctx = camCanvas.getContext('2d');
+                camCanvas.width = camCanvas.parentElement.clientWidth;
+                camCanvas.height = camCanvas.parentElement.clientHeight;
+                
+                ctx.fillStyle = '#000';
+                ctx.fillRect(0, 0, camCanvas.width, camCanvas.height);
+                
+                if (drones[i]) {
+                    const drone = drones[i];
+                    
+                    // Arka plan
+                    if (drone.position[2] > 30) {
+                        const gradient = ctx.createLinearGradient(0, 0, 0, camCanvas.height);
+                        gradient.addColorStop(0, '#87CEEB');
+                        gradient.addColorStop(1, '#228B22');
+                        ctx.fillStyle = gradient;
+                        ctx.fillRect(0, 0, camCanvas.width, camCanvas.height);
+                    } else {
+                        ctx.fillStyle = '#228B22';
+                        ctx.fillRect(0, 0, camCanvas.width, camCanvas.height);
+                    }
+                    
+                    // HUD
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+                    ctx.fillRect(0, 0, camCanvas.width, 30);
+                    
+                    ctx.fillStyle = '#00ff88';
+                    ctx.font = '12px Arial';
+                    ctx.fillText(`Drone #${drone.id}`, 5, 20);
+                    ctx.fillText(`${drone.position[2].toFixed(1)}m`, camCanvas.width - 40, 20);
+                    
+                    // Hedef göstergesi
+                    if (drone.status === 'ENGAGING') {
+                        ctx.strokeStyle = '#ff0044';
+                        ctx.lineWidth = 2;
+                        ctx.strokeRect(
+                            camCanvas.width / 2 - 30,
+                            camCanvas.height / 2 - 30,
+                            60, 60
+                        );
+                        
+                        ctx.fillStyle = '#ff0044';
+                        ctx.font = 'bold 14px Arial';
+                        ctx.textAlign = 'center';
+                        ctx.fillText('TARGET LOCKED', camCanvas.width / 2, camCanvas.height / 2 + 50);
+                    }
+                    
+                    // Crosshair
+                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.moveTo(camCanvas.width / 2 - 20, camCanvas.height / 2);
+                    ctx.lineTo(camCanvas.width / 2 + 20, camCanvas.height / 2);
+                    ctx.moveTo(camCanvas.width / 2, camCanvas.height / 2 - 20);
+                    ctx.lineTo(camCanvas.width / 2, camCanvas.height / 2 + 20);
+                    ctx.stroke();
+                }
+            }
+        }
+        
+        // Kontrol fonksiyonları
+        function togglePause() {
+            if (!socket || !socket.connected) {
+                log('Sunucu bağlantısı yok!', 'warning');
+                return;
+            }
+            
+            socket.emit('control', { action: 'pause' });
+            isPaused = !isPaused;
+            
+            const btn = document.getElementById('pauseBtn');
+            if (isPaused) {
+                btn.innerHTML = '<span>▶️</span> DEVAM';
+                btn.className = 'btn paused';
+            } else {
+                btn.innerHTML = '<span>⏸️</span> DURAKLAT';
+                btn.className = 'btn success';
+            }
+        }
+        
+        function spawnTarget() {
+            if (!socket || !socket.connected) {
+                log('Sunucu bağlantısı yok!', 'warning');
+                return;
+            }
+            
+            const position = [
+                Math.random() * 300 + 50,
+                Math.random() * 300 + 50,
+                0
+            ];
+            
+            socket.emit('control', {
+                action: 'spawn_target',
+                data: {
+                    position: position,
+                    type: Math.random() > 0.3 ? 'truck' : 'car'
+                }
+            });
+            
+            log(`Yeni hedef oluşturuldu`, 'success');
+        }
+        
+        function resetSimulation() {
+            if (!socket || !socket.connected) {
+                log('Sunucu bağlantısı yok!', 'warning');
+                return;
+            }
+            
+            if (confirm('Simülasyonu sıfırlamak istediğinizden emin misiniz?')) {
+                socket.emit('control', { action: 'reset' });
+                selectedDrone = null;
+                log('Simülasyon sıfırlandı', 'warning');
+            }
+        }
+        
+        function toggleAutoMode() {
+            if (!socket || !socket.connected) {
+                log('Sunucu bağlantısı yok!', 'warning');
+                return;
+            }
+            
+            autoMode = !autoMode;
+            socket.emit('control', {
+                action: 'auto_mode',
+                value: autoMode
+            });
+            
+            log(`Otomatik mod: ${autoMode ? 'Açık' : 'Kapalı'}`, 'info');
+        }
+        
+        // Kamera tıklama olayları
+        document.querySelectorAll('.camera-view').forEach(cam => {
+            cam.addEventListener('click', function() {
+                const droneId = parseInt(this.dataset.drone);
+                selectDrone(droneId);
+                
+                document.querySelectorAll('.camera-view').forEach(c => {
+                    c.classList.remove('selected');
+                });
+                this.classList.add('selected');
+            });
+        });
+        
+        // Ana render döngüsü
+        function render() {
+            drawMap();
+            drawCameraViews();
+            requestAnimationFrame(render);
+        }
+        
+        // Periyodik güncelleme
+        setInterval(() => {
+            if (socket && socket.connected) {
+                socket.emit('request_update');
+            }
+        }, 100);
+        
+        // Başlatma
+        window.addEventListener('load', () => {
+            log('Sistem başlatılıyor...', 'info');
+            initSocket();
+            render();
+        });
+        
+        window.addEventListener('beforeunload', () => {
+            if (socket) {
+                socket.disconnect();
+            }
+        });
+    </script>
+</body>
+</html>
