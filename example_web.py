@@ -1,15 +1,8 @@
 """
 DRONE SWARM SİMÜLASYON - TAM ÇALIŞAN VERSİYON
 ============================================
-30 Drone Koordineli Saldırı Simülasyonu
-
-Kurulum:
-pip install flask flask-socketio flask-cors numpy
-
-Çalıştırma:
-python drone_sim.py
-
-Sonra tarayıcıda: http://localhost:1010
+30 Drone Koordineli Saldırı Simülasyonu 
+  
 """
 
 from flask import Flask, render_template, jsonify, request
